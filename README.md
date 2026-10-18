@@ -2,179 +2,173 @@
 
 # ⏪ REWIND
 
-**A text editor where Undo / Redo is an interactive, hand-crafted singly linked list.**
+**A text editor where Undo / Redo is a live, hand-written singly linked list.**
 
-[![Live Demo](https://img.shields.io/badge/Demo-Live%20on%20Render-46E3B7?style=for-the-badge&logo=render&logoColor=white)](https://rewind-s8o1.onrender.com/)
-[![C++17](https://img.shields.io/badge/C++-17-00599C?style=for-the-badge&logo=c%2B%2B&logoColor=white)](https://en.cppreference.com/w/cpp/17)
-[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-rewind--s8o1.onrender.com-46E3B7?style=for-the-badge&logo=render&logoColor=white)](https://rewind-s8o1.onrender.com/)
+&nbsp;
+[![C++17](https://img.shields.io/badge/C%2B%2B-17-00599C?style=for-the-badge&logo=c%2B%2B&logoColor=white)](https://en.cppreference.com/w/cpp/17)
+&nbsp;
+[![Docker](https://img.shields.io/badge/Docker-ready-2496ED?style=for-the-badge&logo=docker&logoColor=white)](./Dockerfile)
 
 <br/>
 
-👉 **[Try Live Demo: rewind-s8o1.onrender.com](https://rewind-s8o1.onrender.com/)** 👈
+**[→ Open the live editor](https://rewind-s8o1.onrender.com/)**
+
+*First load may take ~30 s (free-tier cold start). Subsequent loads are instant.*
 
 </div>
 
 ---
 
-## 💡 About The Project
+## What it is
 
-Most text editors handle Undo/Redo using two stacks (`undo_stack` and `redo_stack`). **REWIND** takes a different approach: **the browser is merely the display canvas — all document state and the complete history graph live entirely in C++**, powered by a raw, hand-written **singly linked list** (no `std::list`, no `std::stack`, and browser native undo is disabled).
+Most editors manage history with two hidden stacks. REWIND makes the data structure the point: **all document state and the complete edit history live in a hand-written singly linked list in C++** — no `std::list`, no `std::stack`, no browser undo. The browser is only the screen.
 
-As you type, delete, or paste, the editor visualizes the underlying data structure in real time: pointer updates, head sentinels, branch pruning, and step-by-step list traversals.
+Every keystroke, delete, or paste appends a node. Undo walks backward from `head`. Redo follows `current->next`. The visualizer animates every pointer update in real time.
 
 ```
-head -> [Initial state] -> [Typed "Hello"] -> [Deleted "lo"] -> [Pasted 12 chars] -> NULL
-                                                    ^
-                                                 current
+head → [Initial state] → [Typed "Hello"] → [Deleted "lo"] → [Pasted 12 chars] → NULL
+                                                  ^
+                                               current
 ```
 
 ---
 
-## ✨ Features
+## Features
 
-- **Interactive Linked List Visualizer**: Live rendering of nodes, `next` pointers, `head`, `current`, and `NULL`.
-- **Word-Boundary & Intelligent Grouping**: Natural undo steps! Typing fast groups characters into clean word units, while Backspace and Delete runs merge seamlessly without cluttering the list.
-- **Visual O(n) Traversal**: Because singly linked nodes lack a `prev` pointer, an **Undo** requires scanning forward from `head` to find the predecessor node. REWIND traces and animates this traversal in amber directly in the UI.
-- **O(1) Redo**: Follows `current->next` instantaneously.
-- **Branch Discarding**: Editing after an undo trims all subsequent future nodes (`free()`). Watch orphaned nodes dissolve live on the canvas.
-- **Time-Travel Slider & Timeline**: Drag the slider or click any node in history to rewind or fast-forward to that exact snapshot.
-- **Full Text Operations**: Find & Replace (Replace-All operates as a single undoable delta), Cut/Copy/Paste, Word Count, Character Count, and Reading Time metrics.
-- **File Management**: Create New (`Alt+N`), Open (`Ctrl+O`), and Save (`Ctrl+S`).
+| | |
+|---|---|
+| **Live list visualizer** | Nodes, `next` arrows, `head` / `current` / `NULL` labels update on every keystroke |
+| **Animated undo traversal** | Because there's no `prev` pointer, Undo walks from `head` and highlights each visited node in amber — making the O(n) cost visible |
+| **O(1) Redo** | Follows `current->next` with no traversal |
+| **Word-boundary grouping** | Continuous typing merges into one node; a space or punctuation starts a fresh node — so Ctrl+Z steps back one word at a time, not one character |
+| **Branch discarding** | Edit after an undo and every future node is freed; orphaned nodes dissolve on the canvas |
+| **Time-travel slider** | Drag to scrub through every historical state |
+| **Timeline** | Click any entry to jump directly to that state |
+| **Find & Replace** | Replace-All is recorded as a single undoable action |
+| **File I/O** | New · Open · Save (native dialog in Chrome/Edge, download elsewhere) |
+| **Statistics** | Words, characters, lines, reading time, node count, grouped edits, freed nodes |
 
 ---
 
-## 🧠 Data Structure & Algorithm Deep Dive
+## How the data structure works
 
-### Node Architecture (`backend/history.h`)
-Instead of duplicating the full text on each keystroke, every node stores a **compact delta**:
+### The Node
 
 ```cpp
 struct Node {
-    int         id;        // Monotonically increasing ID
-    Kind        kind;      // Type, Delete, Paste, Cut, Replace
-    size_t      pos;       // Byte offset in document
-    std::string removed;   // Deleted characters (used to UNDO)
-    std::string inserted;  // Inserted characters (used to REDO)
-    long long   timeMs;    // Timestamp of last merged action
-    Node*       next;      // Singly linked pointer
+    int         id;        // monotonically increasing
+    Kind        kind;      // Type | Delete | Paste | Cut | Replace
+    size_t      pos;       // byte offset in the document
+    std::string removed;   // text deleted — needed to Undo
+    std::string inserted;  // text inserted — needed to Redo
+    long long   timeMs;    // timestamp of last merged edit
+    Node*       next;      // the only link — singly linked
 };
 ```
 
-Applying an edit means replacing `removed` with `inserted` at `pos`. Reversing it simply flips the replacement.
+Every edit is stored as a **delta** (position + what was removed + what was inserted), not a full copy. Applying an edit: replace `removed` with `inserted` at `pos`. Reversing it: the exact opposite.
 
-| Operation | Algorithm | Time Complexity |
+### Complexity
+
+| Operation | How | Cost |
 |---|---|:---:|
-| **Record Edit** | If `current->next` exists, prune future chain. Try grouping with `current`; otherwise allocate `new Node`, link `current->next = node`, and advance `current = node`. | **$O(1)$** ($O(k)$ to free $k$ discarded nodes) |
-| **Undo** | Walk list from `head` until `p->next == current`, apply inverse delta of `current`, set `current = p`. | **$O(n)$** |
-| **Redo** | Advance `current = current->next`, apply forward delta. | **$O(1)$** |
-| **Jump to State** | Repeat undo or redo sequentially until target index is reached. | **$O(n \times \text{steps})$** |
-| **Head Sentinel** | `head` is initialized as a dummy "Initial state" node. The list is never empty, ensuring `current` is never null. | **$O(1)$** |
+| **Record** | Append new node after `current`; or merge into `current` if within grouping window | O(1) |
+| **Undo** | Walk list from `head` until `p->next == current`, reverse delta, set `current = p` | **O(n)** |
+| **Redo** | `current = current->next`, apply delta | **O(1)** |
+| **Time travel** | Repeat undo/redo until target index reached | O(n × steps) |
 
-> **Why $O(n)$ Undo is intentional**: Standard stacks achieve $O(1)$ undo. REWIND demonstrates the mechanics and algorithmic tradeoffs of a purely **singly linked list**, turning linear traversal into an educational, observable visualization.
+> **Why O(n) Undo?**  
+> A singly linked list has no `prev` pointer, so finding the predecessor always costs a full traversal from `head`. That is the tradeoff the project exists to demonstrate. A doubly linked list or a stack would give O(1) undo — but you wouldn't see the walk.
+
+### Smart Grouping (`EditorHistory::tryMerge`)
+
+A new edit merges into `current` when **all** of these hold:
+- Same kind (type / delete / backspace)
+- Within 1 000 ms of the last merged edit
+- Contiguous position in the text
+- The node does not end with `\n`
+- The incoming character is **not** a word-boundary (`space`, punctuation, etc.)
+
+Spaces and punctuation always close the current node, so Undo steps back one natural word at a time.
+
+### Request flow
+
+```
+textarea input
+  → JS diff (common prefix / suffix)
+  → POST /api/edit {pos, removed, inserted, kind, group}
+  → C++ EditorHistory::record()
+  → JSON {text, nodes[], currentIndex, trace[], stats}
+  → JS redraws editor, timeline, slider, visualizer
+```
+
+Positions are **byte offsets in UTF-8**, so emoji and accented characters work. If the browser and backend ever disagree the backend returns HTTP 409 and the editor re-syncs from the canonical backend text.
 
 ---
 
-## 🚀 Running Locally
+## API
 
-### Prerequisites
-- A C++17 compiler (`clang++`, `g++`, or MinGW-w64)
-- `make` (optional)
-- Modern web browser
+| Method | Endpoint | Body | Effect |
+|---|---|---|---|
+| GET | `/api/state` | — | Full state snapshot |
+| POST | `/api/edit` | `{pos, removed, inserted, kind, group}` | Record an edit |
+| POST | `/api/undo` | — | Step back one node |
+| POST | `/api/redo` | — | Step forward one node |
+| POST | `/api/goto` | `{index}` | Time-travel to any node |
+| POST | `/api/reset` | `{text}` | New / open file: free list, start over |
 
-All dependencies (`cpp-httplib` and `nlohmann/json`) are single-header libraries bundled in `backend/third_party/`. No package managers required.
+---
 
-### Quick Start (Linux / macOS)
+## Keyboard shortcuts
+
+| Shortcut | Action |
+|---|---|
+| `Ctrl Z` / `Cmd Z` | Undo |
+| `Ctrl Y` / `Ctrl Shift Z` | Redo |
+| `Ctrl S` | Save |
+| `Ctrl O` | Open file |
+| `Ctrl H` | Find & Replace |
+| `Alt N` | New document |
+
+---
+
+## Run locally
+
+Requires a C++17 compiler and a modern browser. The two dependencies (`cpp-httplib`, `nlohmann/json`) are bundled as single headers in `backend/third_party/`.
 
 ```bash
-# 1. Clone the repository
 git clone https://github.com/jashwantnukala/rewind.git
 cd rewind
-
-# 2. Build and run
 make
-./rewind
+./rewind          # open http://localhost:8080
 ```
 
-Open **[http://localhost:8080](http://localhost:8080)** in your browser.
-
-*(To bind to a custom port, pass it as an argument: `./rewind 9000`)*
-
-### Windows (MinGW-w64 / MSYS2)
-
+**Windows (MinGW-w64)**
 ```bash
 mingw32-make
 rewind.exe
 ```
 
-### Manual Compilation
+**Docker**
 ```bash
-# Linux / macOS
-g++ -std=c++17 -O2 -pthread -Ibackend/third_party backend/server.cpp backend/history.cpp -o rewind
-
-# Windows
-g++ -std=c++17 -O2 -D_WIN32_WINNT=0x0A00 -Ibackend/third_party backend/server.cpp backend/history.cpp -o rewind.exe -lws2_32 -lwsock32
-```
-
----
-
-## 🐳 Docker Deployment
-
-A multi-stage [Dockerfile](Dockerfile) is provided for minimal image size and fast builds.
-
-```bash
-# Build Docker image
 docker build -t rewind .
-
-# Run container
 docker run -p 8080:8080 rewind
 ```
-Access at **http://localhost:8080**.
 
 ---
 
-## 📁 Repository Structure
+## Project layout
 
-```text
-├── backend/
-│   ├── history.h          # Core singly linked list definitions & delta engine
-│   ├── history.cpp        # Traversal, grouping logic, and undo/redo algorithms
-│   ├── server.cpp         # Lightweight HTTP API server & static file host
-│   └── third_party/       # Single-header libraries (httplib.h, json.hpp)
-├── frontend/
-│   ├── index.html         # Workspace markup & history dashboard layout
-│   ├── style.css          # Modern dark-mode UI theme & animations
-│   └── app.js             # Canvas/DOM visualizer, input diffing & sync engine
-├── Dockerfile             # Multi-stage production container build
-├── fly.toml               # Fly.io deployment blueprint
-├── Makefile               # Local build automation
-└── README.md
 ```
-
----
-
-## 📡 REST API Reference
-
-The C++ backend exposes a lightweight JSON API:
-
-| Method | Endpoint | Payload | Description |
-|---|---|---|---|
-| `GET` | `/api/state` | — | Returns current text, linked list nodes, and text metrics |
-| `POST` | `/api/edit` | `{"pos", "removed", "inserted", "kind", "group"}` | Applies delta and appends/merges a history node |
-| `POST` | `/api/undo` | — | Steps back one node ($O(n)$ traversal) |
-| `POST` | `/api/redo` | — | Steps forward one node ($O(1)$) |
-| `POST` | `/api/goto` | `{"index": number}` | Time-travels to any node in history |
-| `POST` | `/api/reset` | `{"text": string}` | Resets buffer and reallocates linked list |
-
----
-
-## ⌨️ Keyboard Shortcuts
-
-| Shortcut | Action |
-|---|---|
-| <kbd>Ctrl</kbd> + <kbd>Z</kbd> (or <kbd>Cmd</kbd> + <kbd>Z</kbd>) | **Undo** (traverse to previous node) |
-| <kbd>Ctrl</kbd> + <kbd>Y</kbd> / <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd> | **Redo** (advance to next node) |
-| <kbd>Ctrl</kbd> + <kbd>H</kbd> | Open **Find and Replace** |
-| <kbd>Ctrl</kbd> + <kbd>S</kbd> | Save document to local disk |
-| <kbd>Ctrl</kbd> + <kbd>O</kbd> | Open local file |
-| <kbd>Alt</kbd> + <kbd>N</kbd> | New document |
+backend/
+  history.h / history.cpp   singly linked list · delta engine · grouping · undo/redo
+  server.cpp                HTTP server · JSON API (thin glue layer)
+  third_party/              httplib.h · json.hpp (bundled, no install needed)
+frontend/
+  index.html                markup & history panel
+  style.css                 dark-mode UI & animations
+  app.js                    input diffing · API calls · live visualizer
+Dockerfile                  multi-stage build for deployment
+Makefile                    local build shortcut
+```
