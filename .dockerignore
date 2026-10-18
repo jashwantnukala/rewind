@@ -1,0 +1,6 @@
+.git
+rewind
+rewind.exe
+*.o
+*.d
+

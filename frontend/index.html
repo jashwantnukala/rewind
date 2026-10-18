@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>REWIND · linked-list text editor</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%237c6cff'/%3E%3Cpath d='M17 9v14l-9-7zM26 9v14l-9-7z' fill='white'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="bar">
+  <div class="brand">
+    <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#9d8cff"/><stop offset="1" stop-color="#c77dff"/></linearGradient></defs><path d="M17 7v18L5 16zM29 7v18L17 16z" fill="url(#g)"/></svg>
+    <b>Rewind</b>
+  </div>
+  <div class="doc"><span id="fname">untitled.txt</span><i id="dirty" class="dirty" title="Unsaved changes" hidden></i></div>
+  <nav class="tools" aria-label="Toolbar">
+    <div class="grp">
+      <button class="btn" id="bNew" title="New file (Alt+N)"><i data-i="new"></i><span>New</span></button>
+      <button class="btn" id="bOpen" title="Open file (Ctrl+O)"><i data-i="open"></i><span>Open</span></button>
+      <button class="btn" id="bSave" title="Save file (Ctrl+S)"><i data-i="save"></i><span>Save</span></button>
+    </div>
+    <div class="grp">
+      <button class="btn" id="bUndo" title="Undo (Ctrl+Z)"><i data-i="undo"></i><span>Undo</span></button>
+      <button class="btn" id="bRedo" title="Redo (Ctrl+Y or Ctrl+Shift+Z)"><i data-i="redo"></i><span>Redo</span></button>
+    </div>
+    <div class="grp">
+      <button class="btn" id="bCut" title="Cut (Ctrl+X)"><i data-i="cut"></i><span>Cut</span></button>
+      <button class="btn" id="bCopy" title="Copy (Ctrl+C)"><i data-i="copy"></i><span>Copy</span></button>
+      <button class="btn" id="bPaste" title="Paste (Ctrl+V)"><i data-i="paste"></i><span>Paste</span></button>
+      <button class="btn" id="bFind" title="Find and replace (Ctrl+H)"><i data-i="find"></i><span>Replace</span></button>
+    </div>
+  </nav>
+  <button class="btn accent" id="bPanel" title="Show or hide the history panel"><i data-i="history"></i><span>History</span></button>
+</header>
+
+<main>
+  <section class="stage">
+    <div class="find" id="find" hidden>
+      <input id="fq" placeholder="Find" autocomplete="off" spellcheck="false">
+      <input id="fr" placeholder="Replace with" autocomplete="off" spellcheck="false">
+      <label class="chk"><input type="checkbox" id="fcase"> Match case</label>
+      <span id="fcount" class="muted"></span>
+      <button class="btn" id="fNext">Find next</button>
+      <button class="btn" id="fOne">Replace</button>
+      <button class="btn" id="fAll">Replace all</button>
+      <button class="btn icon" id="fClose" aria-label="Close">✕</button>
+    </div>
+
+    <div class="card editor-card">
+      <textarea id="editor" spellcheck="false" placeholder="Start writing. Every action becomes a node in the linked list below."></textarea>
+      <footer class="status">
+        <span id="sPos">Ln 1, Col 1</span>
+        <span id="sSel" hidden></span>
+        <span class="grow"></span>
+        <span id="sWords">0 words</span>
+        <span id="sChars">0 characters</span>
+        <span>UTF-8</span>
+      </footer>
+    </div>
+
+    <div class="card viz-card">
+      <div class="viz-head">
+        <h2>Singly linked list</h2>
+        <p id="vizNote">Click any node to jump to that state.</p>
+        <div class="legend"><span class="lg past"></span>undo side <span class="lg cur"></span>current <span class="lg fut"></span>redo side</div>
+      </div>
+      <div class="viz-scroll" id="viz"></div>
+    </div>
+  </section>
+
+  <aside class="panel card" id="panel">
+    <div class="p-head"><h2>History</h2><span id="pCount" class="muted"></span><button class="btn icon" id="pClose" aria-label="Close history">✕</button></div>
+    <div class="travel">
+      <div class="travel-top"><label for="slider">Time travel</label><output id="stepOut">Step 0 of 0</output></div>
+      <input type="range" id="slider" min="0" max="0" value="0" disabled>
+    </div>
+    <ol class="timeline" id="timeline"></ol>
+    <div class="stats" id="stats"></div>
+  </aside>
+</main>
+
+<div id="toast" role="status" aria-live="polite"></div>
+<input type="file" id="file" hidden accept=".txt,.md,.json,.js,.ts,.py,.c,.cpp,.h,.java,.html,.css,.csv,.log,text/*">
+<script src="app.js"></script>
+</body>
+</html>
