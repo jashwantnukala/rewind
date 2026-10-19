@@ -92,6 +92,123 @@ A new edit merges into `current` when **all** of these hold:
 
 Spaces and punctuation always close the current node, so Undo steps back one natural word at a time.
 
+### Algorithms
+
+All five operations work on the same three things: the list (`head` is a sentinel "Initial state" node, so the list is never empty), the `current` pointer, and the document `text`.
+
+#### 1. Record an edit
+
+```text
+Record(pos, removed, inserted, kind, allowGrouping, now):
+ 1  if pos > length(text) or text[pos .. pos+length(removed)] != removed:
+ 2      return FAIL                      // browser out of sync -> HTTP 409, editor re-syncs
+ 3  if removed and inserted are both empty:
+ 4      return OK                        // nothing changed
+ 5  text <- replace `removed` with `inserted` at pos
+ 6  if current.next != NULL:             // user undid something, then typed: BRANCH
+ 7      free every node after current    // the old redo chain is unreachable
+ 8      current.next <- NULL
+ 9  else if allowGrouping and TryMerge(current, pos, removed, inserted, kind, now):
+10      return OK                        // folded into the existing node, no new node
+11  n <- new Node(id++, kind, pos, removed, inserted, now)
+12  current.next <- n                    // append at the tail
+13  current <- n
+14  return OK
+```
+
+#### 2. Smart grouping (`TryMerge`)
+
+```text
+TryMerge(node, pos, removed, inserted, kind, now):
+ 1  if node == head or node.kind != kind or now - node.time > 1000 ms:
+ 2      return false
+ 3  if kind == Type:
+ 4      require removed is empty and node.removed is empty
+ 5      require pos == node.pos + length(node.inserted)        // typed right after the last chunk
+ 6      require node.inserted does not end with '\n'
+ 7      require inserted is not a word boundary (space / punctuation)
+ 8      node.inserted <- node.inserted + inserted
+ 9  else if kind == Delete:
+10      require inserted is empty and node.inserted is empty
+11      if pos + length(removed) == node.pos:                  // Backspace run
+12          node.removed <- removed + node.removed
+13          node.pos <- pos
+14      else if pos == node.pos:                               // Delete-key run
+15          node.removed <- node.removed + removed
+16      else return false
+17  else return false
+18  node.time <- now
+19  return true
+```
+
+#### 3. Undo (O(n))
+
+```text
+Undo():
+ 1  if current == head:
+ 2      return FAIL                      // empty history: "Nothing to undo"
+ 3  p <- head
+ 4  while p.next != current:             // no prev pointer, so scan from the head
+ 5      record p.id in trace             // the visualizer highlights these in amber
+ 6      p <- p.next
+ 7  text <- replace `inserted` with `removed` at current.pos      // reverse the delta
+ 8  current <- p
+ 9  return OK
+```
+
+#### 4. Redo (O(1))
+
+```text
+Redo():
+ 1  if current.next == NULL:
+ 2      return FAIL                      // nothing to redo
+ 3  current <- current.next              // single pointer hop
+ 4  text <- replace `removed` with `inserted` at current.pos      // re-apply the delta
+ 5  return OK
+```
+
+#### 5. Time travel and reset
+
+```text
+GoTo(index):
+ 1  if index < 0 or index >= size:  return FAIL
+ 2  c <- position of current in the list           // one scan from head
+ 3  while c > index:  Undo();  c <- c - 1
+ 4  while c < index:  Redo();  c <- c + 1
+ 5  return OK
+
+Reset(newText):
+ 1  free every node, including head
+ 2  text <- newText
+ 3  head <- current <- new Node(Init)              // fresh sentinel
+```
+
+#### Worked example: edit, undo, branch
+
+```text
+Type "ab"         head -> [T "ab"]                                  -> NULL
+                                  ^current
+Type " cd"        head -> [T "ab"] -> [T " cd"]                     -> NULL
+                                            ^current
+Undo              head -> [T "ab"] -> [T " cd"]                     -> NULL
+                              ^current      (redo side)
+Type "X"          head -> [T "ab"] -> [T "X"]   [T " cd"] is freed  -> NULL
+(branch)                              ^current
+Redo              FAIL: current.next == NULL, so the old " cd" is gone for good
+```
+
+#### Edge cases handled
+
+| Situation | Behaviour |
+|---|---|
+| Undo at `head` | Returns FAIL, state unchanged, UI shows "Nothing to undo" |
+| Redo when `current.next == NULL` | Returns FAIL, UI shows "Nothing to redo" |
+| Many undos in a row | Each one re-scans from `head`; the traversal grows shorter as `current` moves left |
+| Edit after undo | Redo chain is freed before the new node is appended (no leaked nodes) |
+| `GoTo` outside `[0, size-1]` | Rejected, no change |
+| Browser text differs from backend text | Edit rejected (HTTP 409), editor re-syncs from the backend |
+| New / Open file | `Reset` frees the whole list and starts again with a single head node |
+
 ### Request flow
 
 ```
